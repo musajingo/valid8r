@@ -100,10 +100,8 @@ pub fn tokens(
         quote!(self.#field_name),
         field_optionality(field_name_str, all_fields),
     );
-    let other_expr = value_as_option_ref(
-        quote!(self.#o),
-        field_optionality(&other_name, all_fields),
-    );
+    let other_expr =
+        value_as_option_ref(quote!(self.#o), field_optionality(&other_name, all_fields));
 
     // Prepare the custom message and code, if provided.
     let message = quote_message(must_match.message);
