@@ -260,9 +260,11 @@ impl ValidateField {
 
                 if OPTIONS_TYPE.contains(&idents_of_path.as_str()) {
                     count += 1;
-                    if let Some(p) = p.path.segments.first()
-                        && let syn::PathArguments::AngleBracketed(ref params) = p.arguments
-                        && let syn::GenericArgument::Type(ty) = params.args.first().unwrap()
+                    // The generic arguments live on the LAST segment: for
+                    // `std::option::Option<T>` that is `Option`, not `std`.
+                    if let Some(segment) = p.path.segments.last()
+                        && let syn::PathArguments::AngleBracketed(ref params) = segment.arguments
+                        && let Some(syn::GenericArgument::Type(ty)) = params.args.first()
                     {
                         count = find_option(count, ty);
                     }
