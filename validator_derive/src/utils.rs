@@ -352,23 +352,17 @@ pub fn generate_is_prohibited_check(
 ///
 /// Cross-field validators like `must_match` serialize *another* field's value
 /// into their error params, so they must consult that field's sensitivity, not
-/// just their own. Only top-level idents of each `#[validate(...)]` list are
-/// inspected, so nested tokens (e.g. a function path) cannot false-positive.
+/// just their own. The attribute is read through the same darling parser the
+/// derive uses everywhere else (`ValidateField::from_field`), so this can
+/// never disagree with how `sensitive` is interpreted for redaction.
 pub fn is_field_sensitive(field_name: &str, all_fields: &[&Field]) -> bool {
+    use darling::FromField;
+
     all_fields
         .iter()
         .find(|f| f.ident.as_ref().is_some_and(|i| i == field_name))
-        .is_some_and(|f| {
-            f.attrs.iter().any(|a| {
-                a.path().is_ident("validate")
-                    && match &a.meta {
-                        syn::Meta::List(list) => list.tokens.clone().into_iter().any(
-                            |t| matches!(t, proc_macro2::TokenTree::Ident(ref i) if i == "sensitive"),
-                        ),
-                        _ => false,
-                    }
-            })
-        })
+        .and_then(|f| ValidateField::from_field(f).ok())
+        .is_some_and(|parsed| parsed.sensitive.unwrap_or(false))
 }
 
 /// Helper function to find a specific attribute (by `name`) within a slice of attributes.

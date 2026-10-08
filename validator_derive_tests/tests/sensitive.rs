@@ -148,3 +148,29 @@ fn must_match_omits_both_params_when_both_fields_are_sensitive() {
         err.params
     );
 }
+
+// ============================================================================
+// must_match: explicit `sensitive = false` is NOT sensitive
+// ============================================================================
+
+#[derive(Validate, Debug)]
+struct MatchExplicitlyNotSensitive {
+    #[validate(sensitive = false)]
+    nickname: String,
+
+    #[validate(must_match(other = "nickname"))]
+    nickname_confirmation: String,
+}
+
+#[test]
+fn must_match_keeps_other_param_when_sensitive_is_explicitly_false() {
+    let instance = MatchExplicitlyNotSensitive {
+        nickname: "bob".to_string(),
+        nickname_confirmation: "bobby".to_string(),
+    };
+    let errors = instance.validate().unwrap_err();
+    let err = &errors.field_errors()["nickname_confirmation"][0];
+    assert_eq!(err.code, "must_match");
+    assert_eq!(err.params["other"], "bob");
+    assert_eq!(err.params["value"], "bobby");
+}
