@@ -5,7 +5,7 @@ use std::sync::LazyLock;
 use validator::*;
 
 // Static Regex for password validation: checks for at least one digit.
-static PASSWORD_HAS_DIGIT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\d").unwrap());
+static PASSWORD_HAS_DIGIT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[0-9]").unwrap());
 // Static Regex for password validation: checks for at least one uppercase letter.
 static PASSWORD_HAS_UPPERCASE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[A-Z]").unwrap());
 
@@ -371,13 +371,19 @@ fn test_user_profile_invalid_contact_and_preference() {
     assert!(errs.errors().contains_key("preferences"));
 
     if let Some(ValidationErrorsKind::List(list_errors)) = errs.errors().get("contact_methods") {
-        assert!(list_errors.contains_key(&1)); // Second contact method (phone)
         assert!(list_errors.contains_key(&2)); // Third contact method (fax)
-        if let Some(phone_err_kind) = list_errors.get(&1) {
-            // phone_err_kind is Box<ValidationErrors>
-            assert!(phone_err_kind.errors().contains_key("value"));
-        } else {
-            panic!("Expected error for contact_methods[1]");
+
+        // The second contact method (phone) is only validated when the
+        // `phone_number` feature is enabled.
+        #[cfg(feature = "phone_number")]
+        {
+            assert!(list_errors.contains_key(&1)); // Second contact method (phone)
+            if let Some(phone_err_kind) = list_errors.get(&1) {
+                // phone_err_kind is Box<ValidationErrors>
+                assert!(phone_err_kind.errors().contains_key("value"));
+            } else {
+                panic!("Expected error for contact_methods[1]");
+            }
         }
     } else {
         panic!("Expected List errors for contact_methods");

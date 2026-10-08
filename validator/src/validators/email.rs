@@ -142,6 +142,9 @@ mod tests {
 
     use crate::ValidateEmail;
 
+    // Many of these expectations reject invalid domain parts, which are only
+    // validated when the `email` feature is enabled.
+    #[cfg(feature = "email")]
     #[test]
     fn test_validate_email() {
         // Test cases taken from Django
@@ -223,10 +226,16 @@ mod tests {
         assert!(test.validate_email());
         let test: Cow<'static, str> = String::from("email@here.com").into();
         assert!(test.validate_email());
-        let test: Cow<'static, str> = "a@[127.0.0.1]\n".into();
-        assert!(!test.validate_email());
-        let test: Cow<'static, str> = String::from("a@[127.0.0.1]\n").into();
-        assert!(!test.validate_email());
+
+        // The trailing newline is caught by domain-part validation, which is
+        // only performed when the `email` feature is enabled.
+        #[cfg(feature = "email")]
+        {
+            let test: Cow<'static, str> = "a@[127.0.0.1]\n".into();
+            assert!(!test.validate_email());
+            let test: Cow<'static, str> = String::from("a@[127.0.0.1]\n").into();
+            assert!(!test.validate_email());
+        }
     }
 
     #[test]
