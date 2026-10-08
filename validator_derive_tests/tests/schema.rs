@@ -225,3 +225,107 @@ fn schema_does_not_run_if_other_fields_have_errors() {
     let errs = err.field_errors();
     assert!(!errs.contains_key("__all__"));
 }
+
+mod skip_on_field_errors_with_nested {
+    use validator::{Validate, ValidationError};
+
+    #[derive(Debug, Validate)]
+    struct Child {
+        #[validate(length(min = 3))]
+        name: String,
+    }
+
+    fn failing_first(_: &TwoSchemas) -> Result<(), ValidationError> {
+        Err(ValidationError::new("first"))
+    }
+
+    fn failing_second(_: &TwoSchemas) -> Result<(), ValidationError> {
+        Err(ValidationError::new("second"))
+    }
+
+    #[derive(Debug, Validate)]
+    #[validate(schema(function = failing_first, skip_on_field_errors = false))]
+    #[validate(schema(function = failing_second))]
+    struct TwoSchemas {
+        #[validate(nested)]
+        child: Child,
+    }
+
+    fn schema_codes(errors: &validator::ValidationErrors) -> Vec<String> {
+        errors
+            .field_errors()
+            .get("__all__")
+            .map(|v| v.iter().map(|e| e.code.to_string()).collect())
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn default_schema_skipped_on_nested_errors_even_after_unskipped_schema() {
+        // The child fails, `failing_first` still runs (skipping disabled),
+        // and `failing_second` must be skipped because a field failed —
+        // nested struct errors count as field errors.
+        let s = TwoSchemas {
+            child: Child { name: "x".into() },
+        };
+        let errors = s.validate().unwrap_err();
+        assert_eq!(schema_codes(&errors), vec!["first"]);
+    }
+
+    #[test]
+    fn both_schemas_run_when_fields_are_valid() {
+        // With valid fields, one schema's failure must not suppress the other.
+        let s = TwoSchemas {
+            child: Child {
+                name: "valid".into(),
+            },
+        };
+        let errors = s.validate().unwrap_err();
+        assert_eq!(schema_codes(&errors), vec!["first", "second"]);
+    }
+
+    fn failing_schema(_: &NestedStructOnly) -> Result<(), ValidationError> {
+        Err(ValidationError::new("schema"))
+    }
+
+    #[derive(Debug, Validate)]
+    #[validate(schema(function = failing_schema))]
+    struct NestedStructOnly {
+        #[validate(nested)]
+        child: Child,
+    }
+
+    #[test]
+    fn default_schema_skipped_on_nested_struct_errors() {
+        let s = NestedStructOnly {
+            child: Child { name: "x".into() },
+        };
+        let errors = s.validate().unwrap_err();
+        assert!(
+            !errors.field_errors().contains_key("__all__"),
+            "schema ran despite nested struct errors: {errors:?}"
+        );
+    }
+
+    fn failing_list_schema(_: &NestedListOnly) -> Result<(), ValidationError> {
+        Err(ValidationError::new("schema"))
+    }
+
+    #[derive(Debug, Validate)]
+    #[validate(schema(function = failing_list_schema))]
+    struct NestedListOnly {
+        #[validate(nested)]
+        children: Vec<Child>,
+    }
+
+    #[test]
+    fn default_schema_skipped_on_nested_list_errors() {
+        let s = NestedListOnly {
+            children: vec![Child { name: "x".into() }],
+        };
+        let errors = s.validate().unwrap_err();
+        assert!(
+            !errors.field_errors().contains_key("__all__"),
+            "schema ran despite nested list errors: {errors:?}"
+        );
+    }
+}

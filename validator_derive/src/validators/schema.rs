@@ -82,11 +82,14 @@ pub fn tokens(schema: Schema) -> proc_macro2::TokenStream {
         }
     };
 
-    // If `skip_on_errors` is true, wrap the function call in a condition
-    // that checks if there are no preceding field errors (or only other schema errors).
+    // If `skip_on_errors` is true, wrap the function call in a condition on the
+    // field-error snapshot taken before any schema ran. The snapshot includes
+    // nested struct/list errors (which `errors.field_errors()` would hide) and
+    // excludes errors added by earlier schemas, so sibling schemas still run
+    // when all fields were valid.
     if skip_on_errors {
         quote! {
-            if errors.is_empty() || ((errors.field_errors().len() == 1) && errors.field_errors().contains_key("__all__")) {
+            if !__validator_has_field_errors {
                 #fn_call
             }
         }

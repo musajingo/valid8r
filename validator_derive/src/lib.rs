@@ -704,6 +704,11 @@ pub fn derive_validation(input: proc_macro::TokenStream) -> proc_macro::TokenStr
                 // Insert the token streams for each field's validation logic.
                 // Each field's validation tokens check its specific rules and add to `errors` if they fail.
                 #(#field_validation_tokens)*
+                // Snapshot whether any field-level validation failed (including
+                // nested struct/list errors) BEFORE any schema runs, so
+                // `skip_on_field_errors` decisions are based on field errors
+                // only — one schema's failure never suppresses another.
+                let __validator_has_field_errors = !errors.is_empty();
                 // Insert the token stream for struct-level schema validations.
                 #schema
 
