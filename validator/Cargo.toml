@@ -1,0 +1,29 @@
+[package]
+name = "validator"
+description = "Readdress validation module"
+authors.workspace = true
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+validator_derive = { path = "../validator_derive" }
+
+serde.workspace = true
+serde_json.workspace = true
+regex.workspace = true
+card-validate = { version = "2.4", optional = true }
+url = { version = "2.5", optional = true }
+idna = { version = "1.1", optional = true }
+indexmap = { workspace = true, optional = true }
+phonenumber = { workspace = true, optional = true }
+rust_decimal.workspace = true
+
+[features]
+default = ["email", "phone_number"]
+full = ["email", "phone_number", "cards", "url", "indexmap"]
+email = ["dep:idna"] # Activate validating the host part of an email
+phone_number = ["dep:phonenumber"]
+cards = ["dep:card-validate"]
+url = ["dep:url"]
+indexmap = ["dep:indexmap"]
