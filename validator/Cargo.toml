@@ -1,6 +1,6 @@
 [package]
 name = "validator"
-description = "Readdress validation module"
+description = "Struct validation via #[derive(Validate)], derived from the validator crate"
 authors.workspace = true
 version.workspace = true
 edition.workspace = true
