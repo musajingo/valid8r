@@ -59,7 +59,7 @@
 //! - [Optional Fields](#optional-fields)
 //! - [PATCH Semantics](#patch-semantics)
 //!   - [Using Option\<Option\<T\>\>](#using-optionoptiont)
-//!   - [Using PatchData\<T\>](#using-patchdatat-recommended)
+//!   - [Using Delta\<T\>](#using-deltat-recommended)
 //! - [Nested Validation](#nested-validation)
 //! - [Schema Validation](#schema-validation)
 //! - [Custom Error Messages and Codes](#custom-error-messages-and-codes)
@@ -621,7 +621,7 @@
 //! - **Null** - Field explicitly set to `null` (clear/reset the field)
 //! - **Value** - Field has a value (update to the new value)
 //!
-//! The validation framework supports two approaches: `Option<Option<T>>` and `PatchData<T>`.
+//! The validation framework supports two approaches: `Option<Option<T>>` and `Delta<T>`.
 //!
 //! ## Using `Option<Option<T>>`
 //!
@@ -660,14 +660,17 @@
 //! assert!(update.validate().is_err());
 //! ```
 //!
-//! ## Using `PatchData<T>` (Recommended)
+//! ## Using `Delta<T>` (Recommended)
 //!
-//! `PatchData<T>` is a newtype wrapper that provides the same semantics as `Option<Option<T>>`
-//! with less boilerplate. It automatically handles deserialization and implements `Deref`
-//! for transparent access to the inner value.
+//! `Delta<T>` (from the `delta` crate) is a three-state enum that models a PATCH
+//! field directly, with less boilerplate than `Option<Option<T>>`:
+//!
+//! - `Delta::Unchanged` — field omitted from the request (leave the stored value)
+//! - `Delta::Clear` — field explicitly set to `null` (clear the stored value)
+//! - `Delta::Set(value)` — field sent with a value (set the stored value)
 //!
 //! ```rust,ignore
-//! use help_ttp::patch_request::PatchData;
+//! use delta::Delta;
 //! use serde::Deserialize;
 //! use validator::Validate;
 //!
@@ -676,66 +679,61 @@
 //!     // Only needs #[serde(default)] - no custom deserializer required!
 //!     #[serde(default)]
 //!     #[validate(email)]
-//!     email: PatchData<String>,
+//!     email: Delta<String>,
 //!
 //!     #[serde(default)]
 //!     #[validate(url(nullable))]
-//!     website: PatchData<String>,
+//!     website: Delta<String>,
 //!
 //!     #[serde(default)]
 //!     #[validate(required_with(other_fields("area_id")))]
-//!     country_id: PatchData<i32>,
+//!     country_id: Delta<i32>,
 //!
 //!     #[serde(default)]
-//!     area_id: PatchData<i32>,
+//!     area_id: Delta<i32>,
 //! }
 //! ```
 //!
-//! ### `PatchData<T>` Helper Methods
+//! ### `Delta<T>` Helper Methods
 //!
 //! ```rust,ignore
-//! use help_ttp::patch_request::PatchData;
+//! use delta::Delta;
 //!
-//! let absent: PatchData<String> = PatchData(None);
-//! let null: PatchData<String> = PatchData(Some(None));
-//! let value: PatchData<String> = PatchData(Some(Some("hello".to_string())));
+//! let unchanged: Delta<String> = Delta::Unchanged;
+//! let clear: Delta<String> = Delta::Clear;
+//! let set: Delta<String> = Delta::Set("hello".to_string());
 //!
 //! // Check the state
-//! assert!(absent.is_absent());   // true - field was omitted
-//! assert!(null.is_null());       // true - field was explicitly set to null
-//! assert!(value.has_value());    // true - field has a value
+//! assert!(unchanged.is_unchanged()); // field was omitted
+//! assert!(clear.is_clear());         // field was explicitly set to null
+//! assert!(set.is_set());             // field has a value
 //!
-//! // Access inner value (via Deref to Option<Option<T>>)
-//! if let Some(Some(inner)) = &*value {
-//!     println!("Value: {}", inner);
-//! }
-//!
-//! // Convert to inner type
-//! let inner: Option<Option<String>> = value.into_inner();
+//! // Access the inner value
+//! assert_eq!(set.value(), Some(&"hello".to_string()));
+//! let inner: Option<String> = set.into_value();
 //! ```
 //!
-//! ### Comparison: `Option<Option<T>>` vs `PatchData<T>`
+//! ### Comparison: `Option<Option<T>>` vs `Delta<T>`
 //!
-//! | Aspect | `Option<Option<T>>` | `PatchData<T>` |
-//! |--------|---------------------|----------------|
+//! | Aspect | `Option<Option<T>>` | `Delta<T>` |
+//! |--------|---------------------|------------|
 //! | Serde annotation | `#[serde(default, deserialize_with = "...")]` | `#[serde(default)]` |
 //! | Validation support | ✅ Full | ✅ Full |
 //! | Cross-field validators | ✅ Works | ✅ Works |
-//! | Pattern matching | Direct | Via `Deref` (`*field`) |
-//! | Helper methods | None | `is_absent()`, `is_null()`, `has_value()` |
-//! | Repository access | Direct | Via `Deref` or `.into_inner()` |
+//! | Pattern matching | Nested `Some(Some(_))` | `Delta::Set(_)` |
+//! | Helper methods | None | `is_unchanged()`, `is_clear()`, `is_set()`, `value()` |
 //!
 //! **Semantics Summary (applies to both types):**
 //!
-//! | Value | "Has Value" | Validators Run |
-//! |-------|------------|----------------|
-//! | `None` / `PatchData(None)` | No | Skipped |
-//! | `Some(None)` / `PatchData(Some(None))` | No | Skipped |
-//! | `Some(Some(v))` / `PatchData(Some(Some(v)))` | Yes | Validated |
+//! | State | `Option<Option<T>>` | `Delta<T>` | Validators Run |
+//! |-------|---------------------|------------|----------------|
+//! | Absent | `None` | `Delta::Unchanged` | Skipped |
+//! | Null | `Some(None)` | `Delta::Clear` | Skipped |
+//! | Value | `Some(Some(v))` | `Delta::Set(v)` | Validated |
 //!
-//! ### Validators that work with `PatchData<T>`
+//! ### Validators that work with `Delta<T>`
 //!
-//! All validators work with `PatchData<T>`:
+//! All validators work with `Delta<T>`:
 //!
 //! - **Format validators:** `email`, `url`, `phone_number`, `credit_card`, `ip`, `regex`
 //! - **Presence validators:** `required`, `required_if`, `required_with`, `required_without`

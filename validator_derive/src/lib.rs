@@ -260,7 +260,7 @@
 //!
 //! ---
 //!
-//! ## Option, `Option<Option<T>>`, and `PatchData<T>` Handling
+//! ## Option, `Option<Option<T>>`, and `Delta<T>` Handling
 //!
 //! The derive macro automatically handles optional fields:
 //!
@@ -307,14 +307,15 @@
 //! assert!(update.validate().is_err());
 //! ```
 //!
-//! ### `PatchData<T>` (Recommended for PATCH)
+//! ### `Delta<T>` (Recommended for PATCH)
 //!
-//! `PatchData<T>` from `common::utils` is a wrapper that provides the same semantics
-//! as `Option<Option<T>>` with less boilerplate. The derive macro automatically
-//! recognizes `PatchData<T>` and treats it as equivalent to `Option<Option<T>>`.
+//! `Delta<T>` from the `delta` crate is a three-state enum (`Unchanged` / `Clear` /
+//! `Set(value)`) that provides the same semantics as `Option<Option<T>>` with less
+//! boilerplate. The derive macro automatically recognizes `Delta<T>` and treats
+//! only `Delta::Set(_)` as a value to validate.
 //!
 //! ```rust,ignore
-//! use help_ttp::patch_request::PatchData;
+//! use delta::Delta;
 //! use serde::Deserialize;
 //! use validator::Validate;
 //!
@@ -323,41 +324,41 @@
 //!     // Only needs #[serde(default)] - no custom deserializer required
 //!     #[serde(default)]
 //!     #[validate(length(min = 1, max = 100))]
-//!     name: PatchData<String>,
+//!     name: Delta<String>,
 //!
 //!     #[serde(default)]
 //!     #[validate(email)]
-//!     email: PatchData<String>,
+//!     email: Delta<String>,
 //!
 //!     #[serde(default)]
 //!     #[validate(url(nullable))]
-//!     website: PatchData<String>,
+//!     website: Delta<String>,
 //!
-//!     // Cross-field validation works with PatchData
+//!     // Cross-field validation works with Delta
 //!     #[serde(default)]
 //!     #[validate(required_with(other_fields("area_id")))]
-//!     country_id: PatchData<i32>,
+//!     country_id: Delta<i32>,
 //!
 //!     #[serde(default)]
-//!     area_id: PatchData<i32>,
+//!     area_id: Delta<i32>,
 //! }
 //! ```
 //!
-//! **Why use `PatchData<T>` over `Option<Option<T>>`?**
+//! **Why use `Delta<T>` over `Option<Option<T>>`?**
 //!
-//! | `Option<Option<T>>` | `PatchData<T>` |
-//! |---------------------|----------------|
+//! | `Option<Option<T>>` | `Delta<T>` |
+//! |---------------------|------------|
 //! | Requires `#[serde(default, deserialize_with = "...")]` | Only `#[serde(default)]` |
-//! | No helper methods | `is_absent()`, `is_null()`, `has_value()` |
-//! | Direct pattern matching | Via `Deref` (`*field`) or helper methods |
+//! | No helper methods | `is_unchanged()`, `is_clear()`, `is_set()`, `value()` |
+//! | Nested `Some(Some(_))` patterns | `Delta::Set(_)` patterns or helper methods |
 //!
 //! **Semantics (identical for both types):**
 //!
-//! | State | `Option<Option<T>>` | `PatchData<T>` | Validators |
-//! |-------|---------------------|----------------|------------|
-//! | Absent | `None` | `PatchData(None)` | Skipped |
-//! | Null | `Some(None)` | `PatchData(Some(None))` | Skipped |
-//! | Value | `Some(Some(v))` | `PatchData(Some(Some(v)))` | Run |
+//! | State | `Option<Option<T>>` | `Delta<T>` | Validators |
+//! |-------|---------------------|------------|------------|
+//! | Absent | `None` | `Delta::Unchanged` | Skipped |
+//! | Null | `Some(None)` | `Delta::Clear` | Skipped |
+//! | Value | `Some(Some(v))` | `Delta::Set(v)` | Run |
 //!
 //! ---
 //!

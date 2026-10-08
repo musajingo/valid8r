@@ -15,12 +15,13 @@ use crate::validators;
 
 static OPTIONS_TYPE: [&str; 3] = ["Option|", "std|option|Option|", "core|option|Option|"];
 
-/// Types that represent `Option<Option<T>>` semantics (PATCH semantics).
-/// These are treated as having 2 levels of Option nesting.
-static PATCH_TYPE: [&str; 3] = ["PatchData|", "common|utils|PatchData|", "utils|PatchData|"];
+/// Types that represent PATCH semantics (`Delta<T>`: Unchanged / Clear / Set).
+/// These are treated as having 2 levels of Option nesting: only `Delta::Set(_)`
+/// counts as a value to validate.
+static DELTA_TYPE: [&str; 2] = ["Delta|", "delta|Delta|"];
 
 // A static list of string representations of common numeric types,
-// including their `Option` and `Option<Option>` variants.
+// including their `Option`, `Option<Option>` and `Delta` variants.
 //
 // This is used to determine if a field's type is numeric for specific
 // validation logic (e.g., how to pass arguments to custom validators).
@@ -41,11 +42,12 @@ pub(crate) static NUMBER_TYPES: LazyLock<Vec<String>> = LazyLock::new(|| {
         quote!(f32),
         quote!(f64),
     ];
-    let mut tys = Vec::with_capacity(number_types.len() * 3);
+    let mut tys = Vec::with_capacity(number_types.len() * 4);
     for ty in number_types {
         tys.push(ty.to_string());
         tys.push(quote!(Option<#ty>).to_string());
         tys.push(quote!(Option<Option<#ty> >).to_string());
+        tys.push(quote!(Delta<#ty>).to_string());
     }
     tys
 });
@@ -240,7 +242,7 @@ impl ValidateField {
     /// for validating optional fields.
     /// Returns the number of `Option` wrappers (0, 1, or 2). Aborts for more than 2.
     ///
-    /// Note: `PatchData<T>` is treated as equivalent to `Option<Option<T>>` (returns 2).
+    /// Note: `Delta<T>` is treated as equivalent to `Option<Option<T>>` (returns 2).
     pub fn number_options(&self) -> u8 {
         fn find_option(mut count: u8, ty: &syn::Type) -> u8 {
             if let syn::Type::Path(p) = ty {
@@ -250,9 +252,9 @@ impl ValidateField {
                     acc
                 });
 
-                // Check for PatchData<T> first - it wraps Option<Option<T>> internally,
+                // Check for Delta<T> first - it has three states (Unchanged/Clear/Set),
                 // so it counts as 2 levels of optionality.
-                if PATCH_TYPE.contains(&idents_of_path.as_str()) {
+                if DELTA_TYPE.contains(&idents_of_path.as_str()) {
                     return 2;
                 }
 
@@ -272,17 +274,18 @@ impl ValidateField {
         find_option(0, &self.ty)
     }
 
-    /// Returns `true` if the field's type is `PatchData<T>`.
+    /// Returns `true` if the field's type is `Delta<T>`.
     ///
-    /// `PatchData<T>` is a wrapper type that requires dereferencing before pattern matching.
-    fn is_patch_type(&self) -> bool {
+    /// `Delta<T>` is an enum, so its inner value is reached through `.value()`
+    /// (which returns `Option<&T>`) rather than through `Some(Some(_))` patterns.
+    fn is_delta_type(&self) -> bool {
         if let syn::Type::Path(p) = &self.ty {
             let idents_of_path = p.path.segments.iter().fold(String::new(), |mut acc, v| {
                 acc.push_str(&v.ident.to_string());
                 acc.push('|');
                 acc
             });
-            return PATCH_TYPE.contains(&idents_of_path.as_str());
+            return DELTA_TYPE.contains(&idents_of_path.as_str());
         }
         false
     }
@@ -305,7 +308,7 @@ impl ValidateField {
         Box<dyn Fn(proc_macro2::TokenStream) -> proc_macro2::TokenStream>,
     ) {
         let number_options = self.number_options();
-        let is_patch = self.is_patch_type();
+        let is_delta = self.is_delta_type();
         let field_name = field_name.clone();
         let actual_field = if number_options > 0 {
             quote!(#field_name)
@@ -333,11 +336,20 @@ impl ValidateField {
             2 => (
                 actual_field.clone(),
                 Box::new(move |tokens| {
-                    // For PatchData<T>, we need to dereference first since it implements
-                    // Deref<Target = Option<Option<T>>> but pattern matching doesn't auto-deref.
-                    if is_patch {
+                    // For Delta<T>, reach the inner value through `.value()`, which
+                    // returns Option<&T>: Some(&v) for Delta::Set(v), None otherwise.
+                    // The plain binding on Option<&T> yields a &T, matching what the
+                    // `ref` binding yields in the Option<Option<T>> branch; numeric
+                    // types (Copy) destructure the reference so they bind by value,
+                    // matching the Option<Option<T>> calling convention.
+                    if is_delta {
+                        let delta_binding = if is_number_type {
+                            quote!(&#field_name)
+                        } else {
+                            quote!(#field_name)
+                        };
                         quote!(
-                            if let Some(Some(#binding_pattern)) = *self.#field_name {
+                            if let Some(#delta_binding) = self.#field_name.value() {
                                 #tokens
                             }
                         )
@@ -678,13 +690,16 @@ impl ValidateField {
         // --- Must match validation --- //
 
         let must_match = if let Some(must_match) = self.must_match.clone() {
-            // TODO: handle option for other
-            wrapper_closure(validators::must_match::tokens(
+            // must_match normalizes both fields to Option<&T> itself (covering
+            // Option, Option<Option> and Delta on either side), so it is not
+            // wrapped by `wrapper_closure`.
+            validators::must_match::tokens(
                 &self.crate_name,
                 must_match,
-                &actual_field,
+                &field_name,
                 &field_name_str,
-            ))
+                all_fields,
+            )
         } else {
             quote!()
         };

@@ -11,7 +11,10 @@ use quote::{ToTokens, quote};
 use syn::{Attribute, Field, Ident, LitStr, Type, spanned::Spanned};
 
 use crate::ValidateField;
-use crate::utils::{CrateName, get_attr, quote_code, quote_message};
+use crate::utils::{
+    CrateName, field_optionality, generate_is_prohibited_check, generate_presence_check, get_attr,
+    is_optionish_type, quote_code, quote_message,
+};
 
 /// The field under validation must be None if the function returns true.
 #[derive(Debug, Clone, FromMeta)]
@@ -78,160 +81,6 @@ pub struct ProhibitedWithoutAll {
     pub other_fields: Vec<LitStr>,
 }
 
-// Helper function to determine if a syn::Type is an Option<T> or PatchData<T>
-fn is_option_type(ty: &Type) -> bool {
-    if let Type::Path(type_path) = ty
-        && let Some(segment) = type_path.path.segments.last()
-    {
-        // Check if the last segment (the type name) is "Option" or "PatchData"
-        return segment.ident == "Option" || segment.ident == "PatchData";
-    }
-    false
-}
-
-/// Counts the nesting level of Option types.
-///
-/// - `Option<T>` returns 1
-/// - `Option<Option<T>>` returns 2
-/// - `PatchData<T>` returns 2 (equivalent to `Option<Option<T>>`)
-/// - Non-Option types return 0
-///
-/// This is used to generate appropriate presence checks for PATCH semantics
-/// where `Option<Option<T>>` has different semantics:
-/// - `None` = field omitted (don't update)
-/// - `Some(None)` = explicitly clear/reset
-/// - `Some(Some(value))` = has a value
-fn count_option_nesting(ty: &Type) -> u8 {
-    if let Type::Path(type_path) = ty
-        && let Some(segment) = type_path.path.segments.last()
-    {
-        // Check for PatchData<T> first - it wraps Option<Option<T>> internally,
-        // so it counts as 2 levels of optionality.
-        if segment.ident == "PatchData" {
-            return 2;
-        }
-
-        // Check for Option<T>
-        if segment.ident == "Option" {
-            if let syn::PathArguments::AngleBracketed(args) = &segment.arguments
-                && let Some(syn::GenericArgument::Type(inner)) = args.args.first()
-            {
-                return 1 + count_option_nesting(inner);
-            }
-            return 1;
-        }
-    }
-    0
-}
-
-/// Returns `true` if the type is `PatchData<T>`.
-fn is_patch_type(ty: &Type) -> bool {
-    if let Type::Path(type_path) = ty
-        && let Some(segment) = type_path.path.segments.last()
-    {
-        return segment.ident == "PatchData";
-    }
-    false
-}
-
-/// Gets the Option nesting level for a field by name from the list of all fields.
-fn get_field_option_level(field_name: &str, all_fields: &[&Field]) -> u8 {
-    all_fields
-        .iter()
-        .find(|f| f.ident.as_ref().is_some_and(|i| i == field_name))
-        .map(|f| count_option_nesting(&f.ty))
-        .unwrap_or(0)
-}
-
-/// Returns `true` if the field with the given name has type `PatchData<T>`.
-fn is_field_patch_type(field_name: &str, all_fields: &[&Field]) -> bool {
-    all_fields
-        .iter()
-        .find(|f| f.ident.as_ref().is_some_and(|i| i == field_name))
-        .map(|f| is_patch_type(&f.ty))
-        .unwrap_or(false)
-}
-
-/// Generates the appropriate presence check code based on Option nesting level.
-///
-/// For `check_present = true` (checking if field has a value):
-/// - `Option<T>` (level 1): `self.field.is_some()`
-/// - `Option<Option<T>>` (level 2): `matches!(self.field, Some(Some(_)))`
-/// - `PatchData<T>` (level 2, is_patch=true): `matches!(*self.field, Some(Some(_)))`
-///
-/// For `check_present = false` (checking if field is absent):
-/// - `Option<T>` (level 1): `self.field.is_none()`
-/// - `Option<Option<T>>` (level 2): `!matches!(self.field, Some(Some(_)))`
-/// - `PatchData<T>` (level 2, is_patch=true): `!matches!(*self.field, Some(Some(_)))`
-fn generate_presence_check(
-    field_ident: &Ident,
-    option_level: u8,
-    check_present: bool,
-    is_patch: bool,
-) -> TokenStream2 {
-    match (option_level, check_present) {
-        // Option<T>: standard checks
-        (1, true) => quote! { self.#field_ident.is_some() },
-        (1, false) => quote! { self.#field_ident.is_none() },
-
-        // Option<Option<T>> or PatchData<T>: PATCH semantics - only Some(Some(_)) counts as "has value"
-        // For PatchData<T>, we need to dereference first
-        (2, true) => {
-            if is_patch {
-                quote! { matches!(*self.#field_ident, Some(Some(_))) }
-            } else {
-                quote! { matches!(self.#field_ident, Some(Some(_))) }
-            }
-        }
-        (2, false) => {
-            if is_patch {
-                quote! { !matches!(*self.#field_ident, Some(Some(_))) }
-            } else {
-                quote! { !matches!(self.#field_ident, Some(Some(_))) }
-            }
-        }
-
-        // Non-optional (level 0): always present/never absent
-        (0, true) => quote! { true },
-        (0, false) => quote! { false },
-
-        // Fallback for deeper nesting (level 3+): treat like Option<T>
-        (_, true) => quote! { self.#field_ident.is_some() },
-        (_, false) => quote! { self.#field_ident.is_none() },
-    }
-}
-
-/// Generates the "is prohibited" check for the field being validated.
-///
-/// A field is "prohibited" if it has NO value. For prohibited validation,
-/// we check if the field has a value (which would violate the prohibition).
-///
-/// - `Option<T>` (level 1): `self.field.validate_prohibited()` (uses trait - returns true if None)
-/// - `Option<Option<T>>` (level 2): `!matches!(self.field, Some(Some(_)))` (true if no value)
-/// - `PatchData<T>` (level 2, is_patch=true): `!matches!(*self.field, Some(Some(_)))` (true if no value)
-///
-/// This returns true if the field has NO value (i.e., is correctly prohibited).
-fn generate_is_prohibited_check(
-    field_ident: &Ident,
-    option_level: u8,
-    is_patch: bool,
-) -> TokenStream2 {
-    match option_level {
-        // Option<Option<T>> or PatchData<T>: inline check for PATCH semantics
-        // Field is "prohibited" (has no value) if it's not Some(Some(_))
-        2 => {
-            if is_patch {
-                quote! { !matches!(*self.#field_ident, Some(Some(_))) }
-            } else {
-                quote! { !matches!(self.#field_ident, Some(Some(_))) }
-            }
-        }
-
-        // Option<T> or other: use the trait implementation
-        _ => quote! { self.#field_ident.validate_prohibited() },
-    }
-}
-
 pub fn check_prohibited_validator_form(
     field: &ValidateField,
     field_name: &str,
@@ -268,15 +117,15 @@ pub fn check_prohibited_validator_form(
     // Get the type of the main field being validated
     let main_field_type = &field.ty;
 
-    // Helper closure to check and report if a field is not Option<T>
+    // Helper closure to check and report if a field is not Option<T> or Delta<T>
     let check_option_type_and_abort = |span: proc_macro2::Span,
                                        current_field_name: &str,
                                        current_field_type: &Type,
                                        attribute_name: &str| {
-        if !is_option_type(current_field_type) {
+        if !is_optionish_type(current_field_type) {
             abort!(
                 span, // Use the specific attribute's span if available, otherwise the general error_span
-                "`#[validate({}(...))]` for prohibited checks currently expects fields of type `Option<T>`, but field `{}` is of type `{}`",
+                "`#[validate({}(...))]` for prohibited checks expects fields of type `Option<T>` or `Delta<T>`, but field `{}` is of type `{}`",
                 attribute_name,
                 current_field_name,
                 current_field_type.to_token_stream()
@@ -468,13 +317,11 @@ pub fn prohibited_if_tokens(
     let message = quote_message(params.message);
     let code = quote_code(crate_name, params.code, "prohibited_if");
 
-    // Get the Option nesting level and Patch type status for the field being validated
-    let field_option_level = get_field_option_level(field_name_str, all_fields);
-    let field_is_patch = is_field_patch_type(field_name_str, all_fields);
+    // Classify the optionality of the field being validated
+    let optionality = field_optionality(field_name_str, all_fields);
 
     // Generate the "is prohibited" check for the field
-    let is_prohibited_check =
-        generate_is_prohibited_check(field_name, field_option_level, field_is_patch);
+    let is_prohibited_check = generate_is_prohibited_check(field_name, optionality);
 
     // It's ok to unwrap here, `check_consent_validator_form` should have any caught errors.
     let func_call = params.func.unwrap();
@@ -501,9 +348,8 @@ pub fn prohibited_with_tokens(
     let message = quote_message(params.message);
     let code = quote_code(crate_name, params.code, "prohibited_with");
 
-    // Get the Option nesting level and Patch type status for the field being validated
-    let field_option_level = get_field_option_level(field_name_str, all_fields);
-    let field_is_patch = is_field_patch_type(field_name_str, all_fields);
+    // Classify the optionality of the field being validated
+    let optionality = field_optionality(field_name_str, all_fields);
 
     // Generate the individual checks for each "other" field.
     // Uses appropriate presence check based on Option nesting level.
@@ -514,10 +360,9 @@ pub fn prohibited_with_tokens(
             let other_field_str = other_field.value();
             let other_field_ident = Ident::new(&other_field_str, other_field.span());
 
-            // Detect Option nesting level and Patch type status, generate appropriate presence check
-            let option_level = get_field_option_level(&other_field_str, all_fields);
-            let other_is_patch = is_field_patch_type(&other_field_str, all_fields);
-            generate_presence_check(&other_field_ident, option_level, true, other_is_patch)
+            // Classify the other field's optionality and generate the appropriate presence check
+            let other_optionality = field_optionality(&other_field_str, all_fields);
+            generate_presence_check(&other_field_ident, other_optionality, true)
         })
         .collect();
 
@@ -533,8 +378,7 @@ pub fn prohibited_with_tokens(
     };
 
     // Generate the "is prohibited" check for the field
-    let is_prohibited_check =
-        generate_is_prohibited_check(field_name, field_option_level, field_is_patch);
+    let is_prohibited_check = generate_is_prohibited_check(field_name, optionality);
 
     quote! {
         // prohibition_condition_met is true if any of the other fields have a value.
@@ -558,9 +402,8 @@ pub fn prohibited_with_all_tokens(
     let message = quote_message(params.message);
     let code = quote_code(crate_name, params.code, "prohibited_with_all");
 
-    // Get the Option nesting level and Patch type status for the field being validated
-    let field_option_level = get_field_option_level(field_name_str, all_fields);
-    let field_is_patch = is_field_patch_type(field_name_str, all_fields);
+    // Classify the optionality of the field being validated
+    let optionality = field_optionality(field_name_str, all_fields);
 
     // Generate individual checks for each "other" field.
     let other_field_presence_checks: Vec<TokenStream2> = params
@@ -570,10 +413,9 @@ pub fn prohibited_with_all_tokens(
             let other_field_str = other_field_litstr.value();
             let other_field_ident = Ident::new(&other_field_str, other_field_litstr.span());
 
-            // Detect Option nesting level and Patch type status, generate appropriate presence check
-            let option_level = get_field_option_level(&other_field_str, all_fields);
-            let other_is_patch = is_field_patch_type(&other_field_str, all_fields);
-            generate_presence_check(&other_field_ident, option_level, true, other_is_patch)
+            // Classify the other field's optionality and generate the appropriate presence check
+            let other_optionality = field_optionality(&other_field_str, all_fields);
+            generate_presence_check(&other_field_ident, other_optionality, true)
         })
         .collect();
 
@@ -591,8 +433,7 @@ pub fn prohibited_with_all_tokens(
     };
 
     // Generate the "is prohibited" check for the field
-    let is_prohibited_check =
-        generate_is_prohibited_check(field_name, field_option_level, field_is_patch);
+    let is_prohibited_check = generate_is_prohibited_check(field_name, optionality);
 
     quote! {
         // Field is prohibited if ALL other fields have a value AND field has a value.
@@ -616,9 +457,8 @@ pub fn prohibited_without_tokens(
     let message = quote_message(params.message);
     let code = quote_code(crate_name, params.code, "prohibited_without");
 
-    // Get the Option nesting level and Patch type status for the field being validated
-    let field_option_level = get_field_option_level(field_name_str, all_fields);
-    let field_is_patch = is_field_patch_type(field_name_str, all_fields);
+    // Classify the optionality of the field being validated
+    let optionality = field_optionality(field_name_str, all_fields);
 
     // Generate individual checks for each "other" field.
     let other_field_absence_checks: Vec<TokenStream2> = params
@@ -628,10 +468,9 @@ pub fn prohibited_without_tokens(
             let other_field_str = other_field_litstr.value();
             let other_field_ident = Ident::new(&other_field_str, other_field_litstr.span());
 
-            // Detect Option nesting level and Patch type status, generate appropriate absence check
-            let option_level = get_field_option_level(&other_field_str, all_fields);
-            let other_is_patch = is_field_patch_type(&other_field_str, all_fields);
-            generate_presence_check(&other_field_ident, option_level, false, other_is_patch)
+            // Classify the other field's optionality and generate the appropriate absence check
+            let other_optionality = field_optionality(&other_field_str, all_fields);
+            generate_presence_check(&other_field_ident, other_optionality, false)
         })
         .collect();
 
@@ -648,8 +487,7 @@ pub fn prohibited_without_tokens(
     };
 
     // Generate the "is prohibited" check for the field
-    let is_prohibited_check =
-        generate_is_prohibited_check(field_name, field_option_level, field_is_patch);
+    let is_prohibited_check = generate_is_prohibited_check(field_name, optionality);
 
     quote! {
         // Main field is prohibited if ANY other field is absent, AND main field has a value.
@@ -673,9 +511,8 @@ pub fn prohibited_without_all_tokens(
     let message = quote_message(params.message);
     let code = quote_code(crate_name, params.code, "prohibited_without_all");
 
-    // Get the Option nesting level and Patch type status for the field being validated
-    let field_option_level = get_field_option_level(field_name_str, all_fields);
-    let field_is_patch = is_field_patch_type(field_name_str, all_fields);
+    // Classify the optionality of the field being validated
+    let optionality = field_optionality(field_name_str, all_fields);
 
     // Generate individual checks for each "other" field.
     let other_field_absence_checks: Vec<TokenStream2> = params
@@ -685,10 +522,9 @@ pub fn prohibited_without_all_tokens(
             let other_field_str = other_field_litstr.value();
             let other_field_ident = Ident::new(&other_field_str, other_field_litstr.span());
 
-            // Detect Option nesting level and Patch type status, generate appropriate absence check
-            let option_level = get_field_option_level(&other_field_str, all_fields);
-            let other_is_patch = is_field_patch_type(&other_field_str, all_fields);
-            generate_presence_check(&other_field_ident, option_level, false, other_is_patch)
+            // Classify the other field's optionality and generate the appropriate absence check
+            let other_optionality = field_optionality(&other_field_str, all_fields);
+            generate_presence_check(&other_field_ident, other_optionality, false)
         })
         .collect();
 
@@ -705,8 +541,7 @@ pub fn prohibited_without_all_tokens(
     };
 
     // Generate the "is prohibited" check for the field
-    let is_prohibited_check =
-        generate_is_prohibited_check(field_name, field_option_level, field_is_patch);
+    let is_prohibited_check = generate_is_prohibited_check(field_name, optionality);
 
     quote! {
         // Main field is prohibited if ALL other fields are absent, AND main field has a value.

@@ -4,11 +4,12 @@
 //! The `must_match` validator ensures that the value of the annotated field
 //! is equal to the value of another specified field within the same struct.
 
+use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::spanned::Spanned;
 
 use crate::types::ValidateField;
-use crate::utils::{CrateName, quote_code, quote_message};
+use crate::utils::{CrateName, FieldOptionality, field_optionality, quote_code, quote_message};
 
 /// Represents the arguments parsed from a `#[validate(must_match(other = "field_name"))]` attribute.
 ///
@@ -58,23 +59,48 @@ pub fn check_must_match_validator_form(
     }
 }
 
+/// Generates an expression that views a field's value as `Option<&T>`,
+/// so the two sides of a `must_match` comparison always have the same type
+/// regardless of how each field wraps its inner value.
+fn value_as_option_ref(expr: TokenStream2, optionality: FieldOptionality) -> TokenStream2 {
+    match optionality {
+        FieldOptionality::NotOptional => quote!(::std::option::Option::Some(&#expr)),
+        FieldOptionality::Option => quote!(#expr.as_ref()),
+        FieldOptionality::OptionOption => quote!(#expr.as_ref().and_then(|inner| inner.as_ref())),
+        FieldOptionality::Delta => quote!(#expr.value()),
+    }
+}
+
 /// Generates the `proc_macro2::TokenStream` for the `must_match` validation logic.
 ///
-/// This function takes the parsed `MustMatch` arguments, the crate name identifier,
-/// the field's identifier, and the field's name as a string to construct
-/// the Rust code that will perform the comparison at runtime.
+/// Both fields are normalized to `Option<&T>` before comparing, so any mix of
+/// `T`, `Option<T>`, `Option<Option<T>>` and `Delta<T>` works. The check only
+/// runs when the annotated field has a value (absent/cleared fields have
+/// nothing to confirm); the other field then counts as a mismatch unless it
+/// holds an equal value — in PATCH terms, `Clear` and `Unchanged` never match
+/// a set value.
 pub fn tokens(
     crate_name: &CrateName,
     must_match: MustMatch,
-    field_name: &proc_macro2::TokenStream,
+    field_name: &syn::Ident,
     field_name_str: &str,
-) -> proc_macro2::TokenStream {
+    all_fields: &[&syn::Field],
+) -> TokenStream2 {
     // Get the identifier for the 'other' field.
     let o = must_match.other;
-    // Quote the path to the 'other' field's value and the error parameter for it.
-    let (other, other_err) = (
+    let other_name = o
+        .get_ident()
+        .expect("Cannot get ident from `other` field value")
+        .to_string();
+
+    // Normalize both sides to `Option<&T>` based on each field's type.
+    let main_expr = value_as_option_ref(
+        quote!(self.#field_name),
+        field_optionality(field_name_str, all_fields),
+    );
+    let other_expr = value_as_option_ref(
         quote!(self.#o),
-        quote!(err.add_param(::std::borrow::Cow::from("other"), &self.#o);),
+        field_optionality(&other_name, all_fields),
     );
 
     // Prepare the custom message and code, if provided.
@@ -83,12 +109,18 @@ pub fn tokens(
 
     // Generate the token stream for the must_match validation.
     quote! {
-        if !#crate_name::validate_must_match(&#field_name, &(#other)) {
-            #code
-            #message
-            #other_err
-            err.add_param(::std::borrow::Cow::from("value"), &#field_name);
-            errors.add(#field_name_str, err);
+        if let ::std::option::Option::Some(must_match_value) = #main_expr {
+            let must_match_other = #other_expr;
+            if !#crate_name::validate_must_match(
+                ::std::option::Option::Some(must_match_value),
+                must_match_other,
+            ) {
+                #code
+                #message
+                err.add_param(::std::borrow::Cow::from("other"), &must_match_other);
+                err.add_param(::std::borrow::Cow::from("value"), &must_match_value);
+                errors.add(#field_name_str, err);
+            }
         }
     }
 }

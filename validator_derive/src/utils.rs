@@ -2,8 +2,9 @@
 //! procedural macro. This includes helpers for generating code snippets,
 //! handling the validator crate name, and parsing attributes.
 
+use proc_macro2::TokenStream as TokenStream2;
 use quote::{ToTokens, quote};
-use syn::{Attribute, Path};
+use syn::{Attribute, Field, Ident, Path, Type};
 
 use crate::ValidateField;
 
@@ -226,6 +227,125 @@ pub fn quote_use_statements(
         #phone_number
         #consent
     )
+}
+
+/// How a field's type wraps its inner value, for presence/absence purposes.
+///
+/// Cross-field validators (`required_with`, `prohibited_with`, ...) and the
+/// `required`/`prohibited` checks themselves need to know what "has a value"
+/// means for a given field. For PATCH payloads, a field that is being
+/// *cleared* (explicit null) must not count as having a value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FieldOptionality {
+    /// Not an optional type — always counts as present.
+    NotOptional,
+    /// `Option<T>` — present when `Some(_)`.
+    Option,
+    /// `Option<Option<T>>` — PATCH semantics; present only when `Some(Some(_))`.
+    OptionOption,
+    /// `Delta<T>` — PATCH semantics; present only when `Delta::Set(_)`.
+    Delta,
+}
+
+/// Classifies a type by how it wraps its inner value.
+///
+/// Detection is purely syntactic (by the type path's last segment), like the
+/// rest of the derive: `Option`, `Option<Option<...>>` and `Delta` are
+/// recognized; everything else is `NotOptional`.
+pub fn type_optionality(ty: &Type) -> FieldOptionality {
+    if let Type::Path(type_path) = ty
+        && let Some(segment) = type_path.path.segments.last()
+    {
+        if segment.ident == "Delta" {
+            return FieldOptionality::Delta;
+        }
+
+        if segment.ident == "Option" {
+            if let syn::PathArguments::AngleBracketed(args) = &segment.arguments
+                && let Some(syn::GenericArgument::Type(inner)) = args.args.first()
+                && matches!(
+                    type_optionality(inner),
+                    FieldOptionality::Option | FieldOptionality::OptionOption
+                )
+            {
+                return FieldOptionality::OptionOption;
+            }
+            return FieldOptionality::Option;
+        }
+    }
+    FieldOptionality::NotOptional
+}
+
+/// Returns `true` if the type participates in presence semantics at all
+/// (`Option<T>`, `Option<Option<T>>` or `Delta<T>`). Used by the form checks
+/// of cross-field validators, which reject plain types.
+pub fn is_optionish_type(ty: &Type) -> bool {
+    type_optionality(ty) != FieldOptionality::NotOptional
+}
+
+/// Looks up a field by name and classifies its type. Unknown names fall back
+/// to `NotOptional`; the form checks report unknown field names separately.
+pub fn field_optionality(field_name: &str, all_fields: &[&Field]) -> FieldOptionality {
+    all_fields
+        .iter()
+        .find(|f| f.ident.as_ref().is_some_and(|i| i == field_name))
+        .map(|f| type_optionality(&f.ty))
+        .unwrap_or(FieldOptionality::NotOptional)
+}
+
+/// Generates a boolean expression that is `true` when the field has a value
+/// (`check_present = true`) or when it is absent (`check_present = false`).
+///
+/// - `NotOptional`: always present
+/// - `Option<T>`: `self.field.is_some()`
+/// - `Option<Option<T>>`: `matches!(self.field, Some(Some(_)))`
+/// - `Delta<T>`: `self.field.is_set()`
+pub fn generate_presence_check(
+    field_ident: &Ident,
+    optionality: FieldOptionality,
+    check_present: bool,
+) -> TokenStream2 {
+    let present = match optionality {
+        FieldOptionality::NotOptional => quote! { true },
+        FieldOptionality::Option => quote! { self.#field_ident.is_some() },
+        FieldOptionality::OptionOption => quote! { matches!(self.#field_ident, Some(Some(_))) },
+        FieldOptionality::Delta => quote! { self.#field_ident.is_set() },
+    };
+
+    if check_present {
+        present
+    } else {
+        quote! { !(#present) }
+    }
+}
+
+/// Generates the "has value" check for the field a `required*` validator sits
+/// on. PATCH-aware types get inline checks; everything else goes through the
+/// `ValidateRequired` trait.
+pub fn generate_has_value_check(
+    field_ident: &Ident,
+    optionality: FieldOptionality,
+) -> TokenStream2 {
+    match optionality {
+        FieldOptionality::OptionOption => quote! { matches!(self.#field_ident, Some(Some(_))) },
+        FieldOptionality::Delta => quote! { self.#field_ident.is_set() },
+        _ => quote! { self.#field_ident.validate_required() },
+    }
+}
+
+/// Generates the "is correctly absent" check for the field a `prohibited*`
+/// validator sits on (`true` means the field complies with the prohibition).
+/// PATCH-aware types get inline checks; everything else goes through the
+/// `ValidateProhibited` trait.
+pub fn generate_is_prohibited_check(
+    field_ident: &Ident,
+    optionality: FieldOptionality,
+) -> TokenStream2 {
+    match optionality {
+        FieldOptionality::OptionOption => quote! { !matches!(self.#field_ident, Some(Some(_))) },
+        FieldOptionality::Delta => quote! { !self.#field_ident.is_set() },
+        _ => quote! { self.#field_ident.validate_prohibited() },
+    }
 }
 
 /// Helper function to find a specific attribute (by `name`) within a slice of attributes.

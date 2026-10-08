@@ -146,6 +146,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "delta"
+version = "0.1.0"
+source = "git+https://github.com/musajingo/delta?tag=v0.1.0#5210987e3a232b2578d42ef1ec3df97a35c204a7"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "displaydoc"
 version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -471,13 +479,6 @@ name = "oncemutex"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "44d11de466f4a3006fe8a5e7ec84e93b79c70cb992ae0aa0eb631ad2df8abfe2"
-
-[[package]]
-name = "patch-data"
-version = "0.2.0"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "percent-encoding"
@@ -1050,8 +1051,8 @@ dependencies = [
 name = "validator_derive_tests"
 version = "0.1.0"
 dependencies = [
+ "delta",
  "indexmap",
- "patch-data",
  "regex",
  "rust_decimal",
  "serde",
