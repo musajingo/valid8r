@@ -4,6 +4,9 @@
 //!
 //! It uses the `darling` crate for attribute parsing.
 
+// darling's derive generates `field: field` initializers we can't change.
+#![allow(clippy::redundant_field_names)]
+
 use darling::{FromField, util::Override};
 use proc_macro_error2::abort;
 use quote::{ToTokens, quote};

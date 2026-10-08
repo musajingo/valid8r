@@ -1,3 +1,6 @@
+// darling's derive generates `field: field` initializers we can't change.
+#![allow(clippy::redundant_field_names)]
+
 use crate::{CrateName, validators};
 
 use darling::{FromDeriveInput, ast::Data, util::WithOriginal};
