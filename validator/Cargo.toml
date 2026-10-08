@@ -20,7 +20,7 @@ phonenumber = { workspace = true, optional = true }
 rust_decimal.workspace = true
 
 [features]
-default = ["email", "phone_number"]
+default = []
 full = ["email", "phone_number", "cards", "url", "indexmap"]
 email = ["dep:idna"] # Activate validating the host part of an email
 phone_number = ["dep:phonenumber"]

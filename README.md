@@ -74,14 +74,16 @@ On top of upstream's validators (`email`, `url`, `length`, `range`, `ip`,
 
 ## Cargo features
 
-| Feature        | Default | Enables                                               |
-| -------------- | ------- | ----------------------------------------------------- |
-| `email`        | ✅      | Domain/host-part email validation (via `idna`)        |
-| `phone_number` | ✅      | `phone_number` validator (via `phonenumber`)          |
-| `cards`        |         | `credit_card` validator (via `card-validate`)         |
-| `url`          |         | `url` validator (via `url`)                           |
-| `indexmap`     |         | `length`/`contains` support for `IndexMap`/`IndexSet` |
-| `full`         |         | All of the above                                      |
+No features are enabled by default.
+
+| Feature        | Enables                                               |
+| -------------- | ----------------------------------------------------- |
+| `email`        | Domain/host-part email validation (via `idna`)        |
+| `phone_number` | `phone_number` validator (via `phonenumber`)          |
+| `cards`        | `credit_card` validator (via `card-validate`)         |
+| `url`          | `url` validator (via `url`)                           |
+| `indexmap`     | `length`/`contains` support for `IndexMap`/`IndexSet` |
+| `full`         | All of the above                                      |
 
 ## Development
 

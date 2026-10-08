@@ -119,7 +119,9 @@ struct Website {
 Validates phone numbers using the `phonenumber` crate.
 
 ```rust
-# use validator::Validate;
+# #[cfg(feature = "phone_number")]
+# mod example {
+use validator::Validate;
 #[derive(Validate)]
 struct Contact {
     // International format (auto-detect country)
@@ -133,9 +135,10 @@ struct Contact {
     #[validate(phone_number(country = "GB", message = "Invalid UK phone number"))]
     uk_phone: Option<String>,
 }
+# }
 ```
 
-**Requires:** `phone_number` feature (enabled by default)
+**Requires:** the `phone_number` cargo feature (not in the default set)
 
 **Country codes:** Use ISO 3166-1 alpha-2 codes (e.g., "US", "GB", "DE", "FR")
 
@@ -933,11 +936,14 @@ struct Data {
 
 # Feature Flags
 
-- `email` (default): Enable email validation with IDN support
-- `url` (default): Enable URL validation
-- `phone_number` (default): Enable phone number validation
-- `cards` (default): Enable credit card validation
+No features are enabled by default.
+
+- `email`: Enable validation of the host part of an email (via `idna`)
+- `url`: Enable URL validation
+- `phone_number`: Enable phone number validation
+- `cards`: Enable credit card validation
 - `indexmap`: Enable validation for `IndexMap` and `IndexSet`
+- `full`: Enable all of the above
 
 ---
 
