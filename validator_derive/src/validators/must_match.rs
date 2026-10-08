@@ -9,7 +9,9 @@ use quote::quote;
 use syn::spanned::Spanned;
 
 use crate::types::ValidateField;
-use crate::utils::{CrateName, FieldOptionality, field_optionality, quote_code, quote_message};
+use crate::utils::{
+    CrateName, FieldOptionality, field_optionality, is_field_sensitive, quote_code, quote_message,
+};
 
 /// Represents the arguments parsed from a `#[validate(must_match(other = "field_name"))]` attribute.
 ///
@@ -107,6 +109,21 @@ pub fn tokens(
     let message = quote_message(must_match.message);
     let code = quote_code(crate_name, must_match.code, "must_match");
 
+    // A `#[validate(sensitive)]` field's value must never be serialized into
+    // error params — not even as the `other` param of a different field's
+    // must_match error — so the params are omitted at codegen time rather
+    // than redacted afterwards.
+    let other_param = if is_field_sensitive(&other_name, all_fields) {
+        quote!()
+    } else {
+        quote!(err.add_param(::std::borrow::Cow::from("other"), &must_match_other);)
+    };
+    let value_param = if is_field_sensitive(field_name_str, all_fields) {
+        quote!()
+    } else {
+        quote!(err.add_param(::std::borrow::Cow::from("value"), &must_match_value);)
+    };
+
     // Generate the token stream for the must_match validation.
     quote! {
         if let ::std::option::Option::Some(must_match_value) = #main_expr {
@@ -117,8 +134,8 @@ pub fn tokens(
             ) {
                 #code
                 #message
-                err.add_param(::std::borrow::Cow::from("other"), &must_match_other);
-                err.add_param(::std::borrow::Cow::from("value"), &must_match_value);
+                #other_param
+                #value_param
                 errors.add(#field_name_str, err);
             }
         }

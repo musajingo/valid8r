@@ -348,6 +348,29 @@ pub fn generate_is_prohibited_check(
     }
 }
 
+/// Returns `true` if the field named `field_name` carries `#[validate(sensitive)]`.
+///
+/// Cross-field validators like `must_match` serialize *another* field's value
+/// into their error params, so they must consult that field's sensitivity, not
+/// just their own. Only top-level idents of each `#[validate(...)]` list are
+/// inspected, so nested tokens (e.g. a function path) cannot false-positive.
+pub fn is_field_sensitive(field_name: &str, all_fields: &[&Field]) -> bool {
+    all_fields
+        .iter()
+        .find(|f| f.ident.as_ref().is_some_and(|i| i == field_name))
+        .is_some_and(|f| {
+            f.attrs.iter().any(|a| {
+                a.path().is_ident("validate")
+                    && match &a.meta {
+                        syn::Meta::List(list) => list.tokens.clone().into_iter().any(
+                            |t| matches!(t, proc_macro2::TokenTree::Ident(ref i) if i == "sensitive"),
+                        ),
+                        _ => false,
+                    }
+            })
+        })
+}
+
 /// Helper function to find a specific attribute (by `name`) within a slice of attributes.
 /// This is used, for example, to get the span of a `#[validate(length(...))]` attribute
 /// for error reporting.
