@@ -24,44 +24,6 @@ The `Validate` derive macro is included without a feature flag. No optional
 features are enabled by default; use `full` for all optional validators, or
 enable only the features you need (see [Feature Flags](#feature-flags)).
 
-## Architecture Overview
-
-```text
-┌─────────────────────────────────────────────────────────────────────┐
-│                        HTTP Request                                  │
-└───────────────────────────────┬─────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│        Your web layer (e.g. Axum/Actix extractors)                   │
-│                                                                      │
-│  1. Deserializes request body/query                                  │
-│  2. Calls T::validate()                                              │
-│  3. Returns validated T or structured errors                         │
-└───────────────────────────────┬─────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│           valid8r_derive crate (Procedural Macro)                  │
-│                    #[derive(Validate)]                               │
-│                                                                      │
-│  Generates impl Validate for T by:                                   │
-│  - Parsing #[validate(...)] attributes                               │
-│  - Generating validation code for each field                         │
-│  - Combining results into ValidationErrors                           │
-└───────────────────────────────┬─────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│              valid8r crate (This Crate)                              │
-│                                                                      │
-│  Provides:                                                           │
-│  - Validate and ValidateArgs traits                                  │
-│  - ValidationError and ValidationErrors types                        │
-│  - Built-in validator traits (ValidateEmail, ValidateLength, etc.)   │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
 ## Table of Contents
 
 - [Available Validators](#available-validators)
