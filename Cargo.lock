@@ -1020,7 +1020,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 
 [[package]]
-name = "validator"
+name = "valid8r"
 version = "0.1.0"
 dependencies = [
  "card-validate",
@@ -1032,11 +1032,11 @@ dependencies = [
  "serde",
  "serde_json",
  "url",
- "validator_derive",
+ "valid8r_derive",
 ]
 
 [[package]]
-name = "validator_derive"
+name = "valid8r_derive"
 version = "0.1.0"
 dependencies = [
  "darling",
@@ -1048,7 +1048,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "validator_derive_tests"
+name = "valid8r_derive_tests"
 version = "0.1.0"
 dependencies = [
  "delta",
@@ -1058,7 +1058,7 @@ dependencies = [
  "serde",
  "serde_json",
  "trybuild",
- "validator",
+ "valid8r",
 ]
 
 [[package]]

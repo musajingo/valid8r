@@ -1,9 +1,9 @@
-# validator
+# valid8r
 
 Struct validation for Rust via `#[derive(Validate)]`.
 
 ```rust
-use validator::Validate;
+use valid8r::Validate;
 
 #[derive(Validate)]
 struct SignUp {
@@ -68,9 +68,9 @@ On top of upstream's validators (`email`, `url`, `length`, `range`, `ip`,
 
 | Crate                    | Purpose                                                                                   |
 | ------------------------ | ----------------------------------------------------------------------------------------- |
-| `validator`              | Core traits (`Validate`, `ValidateArgs`), error types, built-in validator implementations |
-| `validator_derive`       | The `#[derive(Validate)]` procedural macro                                                |
-| `validator_derive_tests` | Integration and compile-fail tests for the derive macro                                   |
+| `valid8r`                | Core traits (`Validate`, `ValidateArgs`), error types, built-in validator implementations |
+| `valid8r_derive`       | The `#[derive(Validate)]` procedural macro                                                |
+| `valid8r_derive_tests` | Integration and compile-fail tests for the derive macro                                   |
 
 ## Cargo features
 
@@ -93,7 +93,7 @@ No features are enabled by default.
 
 runs the same checks as CI: `cargo fmt --check`, clippy with warnings denied,
 the full test suite, documentation with warnings denied, a per-feature test
-sweep of the `validator` crate, and an MSRV (`1.94`) check.
+sweep of the `valid8r` crate, and an MSRV (`1.94`) check.
 
 ## License
 

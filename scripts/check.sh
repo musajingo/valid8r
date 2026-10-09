@@ -31,10 +31,10 @@ run cargo +stable clippy --workspace --all-features --all-targets -- -D warnings
 run cargo +stable test --workspace --all-features
 run env RUSTDOCFLAGS="-D warnings" cargo +stable doc --workspace --all-features --no-deps
 
-# The validator crate's feature combinations. The derive tests always build
-# validator with the full feature set, so only `-p validator` is swept here.
+# The valid8r crate's feature combinations. The derive tests always build
+# valid8r with the full feature set, so only `-p valid8r` is swept here.
 for features in "" "email" "phone_number" "cards" "url" "indexmap" "full"; do
-  run cargo +stable test -p validator --no-default-features ${features:+--features "$features"} --all-targets
+  run cargo +stable test -p valid8r --no-default-features ${features:+--features "$features"} --all-targets
 done
 
 echo "==> Checking MSRV ($MSRV)..."
