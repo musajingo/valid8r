@@ -1,4 +1,4 @@
-#![doc = include_str!("../../valid8r.md")]
+#![doc = include_str!("../README.md")]
 
 mod traits;
 mod types;

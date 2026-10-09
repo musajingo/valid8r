@@ -2,6 +2,16 @@
 
 Struct validation for Rust via `#[derive(Validate)]`.
 
+Add the crate to your `Cargo.toml`:
+
+```toml
+[dependencies]
+valid8r = { version = "0.1", features = ["full"] }
+```
+
+The derive macro is included. Enable individual features instead of `full`
+when you only need some optional validators. Requires Rust 1.94 or later.
+
 ```rust
 use valid8r::Validate;
 
@@ -68,9 +78,9 @@ On top of upstream's validators (`email`, `url`, `length`, `range`, `ip`,
 
 | Crate                    | Purpose                                                                                   |
 | ------------------------ | ----------------------------------------------------------------------------------------- |
-| `valid8r`                | Core traits (`Validate`, `ValidateArgs`), error types, built-in validator implementations |
-| `valid8r_derive`       | The `#[derive(Validate)]` procedural macro                                                |
-| `valid8r_derive_tests` | Integration and compile-fail tests for the derive macro                                   |
+| `valid8r`                | Core traits (`Validate`, `ValidateArgs`), error types, built-in validator implementations    |
+| `valid8r_derive`         | The `#[derive(Validate)]` procedural macro                                                 |
+| `valid8r_derive_tests`   | Integration and compile-fail tests for the derive macro (not published)                    |
 
 ## Cargo features
 
@@ -91,9 +101,10 @@ No features are enabled by default.
 ./scripts/check.sh
 ```
 
-runs the same checks as CI: `cargo fmt --check`, clippy with warnings denied,
+runs `cargo fmt --check`, clippy with warnings denied,
 the full test suite, documentation with warnings denied, a per-feature test
 sweep of the `valid8r` crate, and an MSRV (`1.94`) check.
+CI also builds both crates from their packaged archives.
 
 ## License
 

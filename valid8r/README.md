@@ -1,4 +1,4 @@
-# Validator - A Comprehensive Validation Framework for Rust
+# valid8r - A Comprehensive Validation Framework for Rust
 
 This crate provides a powerful, extensible validation framework for Rust structs.
 It consists of two crates that work together:
@@ -10,6 +10,19 @@ It is derived from the [`validator`](https://github.com/Keats/validator) crate
 by Vincent Prouillet and extends it with additional validators (phone numbers,
 consent, conditional presence/prohibition), PATCH semantics, and sensitive-value
 redaction.
+
+## Installation
+
+Requires Rust 1.94 or later. Add this to `Cargo.toml`:
+
+```toml
+[dependencies]
+valid8r = { version = "0.1", features = ["full"] }
+```
+
+The `Validate` derive macro is included without a feature flag. No optional
+features are enabled by default; use `full` for all optional validators, or
+enable only the features you need (see [Feature Flags](#feature-flags)).
 
 ## Architecture Overview
 
@@ -1007,3 +1020,9 @@ async fn create_user(
 
 let app = Router::new().route("/users", post(create_user));
 ```
+
+## License
+
+Licensed under either [MIT](LICENSE-MIT) or
+[Apache License, Version 2.0](LICENSE-APACHE), at your option.
+The MIT license includes the original upstream copyright notice.

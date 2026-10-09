@@ -1,8 +1,17 @@
-# Validator Derive - Procedural Macros for Validation
+# valid8r_derive - Procedural Macros for Validation
 
 This crate provides the `#[derive(Validate)]` procedural macro that generates
 validation implementations for Rust structs. It is part of the validation
 framework and works in conjunction with the `valid8r` crate.
+
+## Installation
+
+Requires Rust 1.94 or later. Use the macro through `valid8r`, which re-exports it:
+
+```toml
+[dependencies]
+valid8r = { version = "0.1", features = ["full"] }
+```
 
 ## Overview
 
@@ -515,3 +524,9 @@ This crate uses:
 
 The macro generates both `impl Validate` and `impl ValidateArgs` to support
 validation with and without context.
+
+## License
+
+Licensed under either [MIT](LICENSE-MIT) or
+[Apache License, Version 2.0](LICENSE-APACHE), at your option.
+The MIT license includes the original upstream copyright notice.

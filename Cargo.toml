@@ -4,13 +4,13 @@ resolver = "3"
 members = ["valid8r", "valid8r_derive", "valid8r_derive_tests"]
 
 [workspace.package]
-authors = ["Musa Mahmoug Jingo <dev.musajingo@pm.me>"]
+authors = ["Musa Mahmoud Jingo <dev.musajingo@pm.me>"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/musajingo/valid8r"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.94"
-publish = false
+publish = true
 
 [workspace.dependencies]
 serde = { version = "1.0.229", features = ["derive"] }

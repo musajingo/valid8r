@@ -4,8 +4,15 @@ description = "Proc macro that provides `#[derive(Validate)]` for the `valid8r` 
 authors.workspace = true
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
 publish.workspace = true
-
+readme = "README.md"
+documentation = "https://docs.rs/valid8r_derive"
+keywords = ["validation", "validate", "derive", "proc-macro"]
+categories = ["development-tools::procedural-macro-helpers", "rust-patterns"]
+include = ["src/**", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
 [lib]
 proc-macro = true

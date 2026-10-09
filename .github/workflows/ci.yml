@@ -10,7 +10,7 @@ env:
 
 jobs:
   check:
-    name: fmt, clippy, tests, features, msrv
+    name: fmt, clippy, tests, features, msrv, packages
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,3 +24,5 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - run: ./scripts/check.sh
+      - name: Verify release packages
+        run: cargo +stable package -p valid8r_derive -p valid8r --all-features

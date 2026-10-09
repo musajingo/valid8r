@@ -1,4 +1,4 @@
-#![doc = include_str!("../../valid8r_derive.md")]
+#![doc = include_str!("../README.md")]
 
 mod types;
 mod utils;

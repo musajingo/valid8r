@@ -4,10 +4,18 @@ description = "Struct validation via #[derive(Validate)]. A fork of the `validat
 authors.workspace = true
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
 publish.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/valid8r"
+keywords = ["validation", "validate", "derive", "serde", "forms"]
+categories = ["rust-patterns", "web-programming"]
+include = ["src/**", "tests/**", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
 [dependencies]
-valid8r_derive = { path = "../valid8r_derive" }
+valid8r_derive = { version = "0.2.0", path = "../valid8r_derive" }
 
 serde.workspace = true
 serde_json.workspace = true
@@ -27,3 +35,6 @@ phone_number = ["dep:phonenumber"]
 cards = ["dep:card-validate"]
 url = ["dep:url"]
 indexmap = ["dep:indexmap"]
+
+[package.metadata.docs.rs]
+all-features = true
