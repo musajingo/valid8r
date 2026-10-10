@@ -274,7 +274,7 @@ errors.
 
 Partial updates need three states: leave a field unchanged, clear it, or set
 it to a value. `valid8r` recognizes both `Option<Option<T>>` and
-[`Delta<T>`](https://github.com/musajingo/delta).
+[`Delta<T>`](https://github.com/musajingo/field-delta).
 
 | Request state   | `Option<Option<T>>` | `Delta<T>`          | Value rules run? | Counts as present? |
 | --------------- | ------------------- | ------------------- | ---------------- | ------------------ |
@@ -345,19 +345,18 @@ assert!(valid.validate().is_ok());
 ### Using `Delta<T>`
 
 `Delta<T>` models the same states directly and requires only
-`#[serde(default)]` for missing fields. Use the `delta` repository below;
-the unrelated crate with the same name on crates.io does not provide this
-type:
+`#[serde(default)]` for missing fields. It comes from the
+[`field-delta`](https://crates.io/crates/field-delta) crate:
 
 ```toml
 [dependencies]
-delta = { git = "https://github.com/musajingo/delta", tag = "v0.1.0" }
+field-delta = "0.1.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ```
 
 ```rust,ignore
-use delta::Delta;
+use field_delta::Delta;
 use serde::Deserialize;
 use valid8r::Validate;
 

@@ -534,12 +534,13 @@ null fields. See the runtime guide for a custom deserializer.
 
 ### Delta
 
-Use the Git dependency below, together with `serde`'s `derive` feature and
-`serde_json = "1"` for this JSON example:
+Use the [`field-delta`](https://crates.io/crates/field-delta) dependency
+below, together with `serde`'s `derive` feature and `serde_json = "1"` for
+this JSON example:
 
 ```toml
 [dependencies]
-delta = { git = "https://github.com/musajingo/delta", tag = "v0.1.0" }
+field-delta = "0.1.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ```
@@ -549,7 +550,7 @@ turns omitted fields into `Delta::Unchanged`; explicit null becomes
 `Delta::Clear`:
 
 ```rust,ignore
-use delta::Delta;
+use field_delta::Delta;
 use serde::Deserialize;
 use valid8r::Validate;
 

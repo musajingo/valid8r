@@ -21,7 +21,7 @@ static OPTIONS_TYPE: [&str; 3] = ["Option|", "std|option|Option|", "core|option|
 /// Types that represent PATCH semantics (`Delta<T>`: Unchanged / Clear / Set).
 /// These are treated as having 2 levels of Option nesting: only `Delta::Set(_)`
 /// counts as a value to validate.
-static DELTA_TYPE: [&str; 2] = ["Delta|", "delta|Delta|"];
+static DELTA_TYPE: [&str; 2] = ["Delta|", "field_delta|Delta|"];
 
 // A static list of string representations of common numeric types,
 // including their `Option`, `Option<Option>` and `Delta` variants.

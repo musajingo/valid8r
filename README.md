@@ -118,10 +118,11 @@ rules still run on absent values. `required` checks presence; add
 `length(min = 1)` when a present string must also be nonempty.
 
 For PATCH payloads, `Option<Option<T>>` and
-[`Delta<T>`](https://github.com/musajingo/delta) distinguish omitted, cleared,
-and set fields. Only actual values count as present and reach value
+[`Delta<T>`](https://github.com/musajingo/field-delta) distinguish omitted,
+cleared, and set fields. Only actual values count as present and reach value
 validators. Nested `Option`s need a custom Serde deserializer to preserve
-explicit JSON nulls. Delta comes from the Git repository linked above.
+explicit JSON nulls. Delta comes from the
+[`field-delta`](https://crates.io/crates/field-delta) crate on crates.io.
 See the [PATCH guide](valid8r/README.md#patch-semantics) for dependencies and
 working examples.
 

@@ -10,7 +10,7 @@
 //! `Unchanged` and `Clear`, and presence validators (`required*`,
 //! `prohibited*`) count `Unchanged` and `Clear` both as absent.
 
-use delta::Delta;
+use field_delta::Delta;
 use valid8r::Validate;
 
 // ============================================================================
