@@ -29,6 +29,8 @@ run() {
 run cargo +stable fmt --check
 run cargo +stable clippy --workspace --all-features --all-targets -- -D warnings
 run cargo +stable test --workspace --all-features
+run cargo +stable test -p valid8r_derive_tests --all-features --doc -- --include-ignored
+run cargo +stable test -p valid8r --no-default-features --doc
 run env RUSTDOCFLAGS="-D warnings" cargo +stable doc --workspace --all-features --no-deps
 
 # The valid8r crate's feature combinations. The derive tests always build

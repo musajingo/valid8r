@@ -1,16 +1,35 @@
 # valid8r
 
-Struct validation for Rust via `#[derive(Validate)]`.
+Validate Rust structs with `#[derive(Validate)]`. Rules produce structured
+errors for fields, nested values, and the whole struct. The crate supports
+conditional presence, consent checks, and partial-update payloads.
 
-Add the crate to your `Cargo.toml`:
+`valid8r` is a fork of [`validator`](https://github.com/Keats/validator),
+created by Vincent Prouillet and its contributors. The upstream copyright
+notice is preserved in [LICENSE-MIT](LICENSE-MIT).
+
+## Contents
+
+- [Quick Start](#quick-start)
+- [Feature Flags](#feature-flags)
+- [Validation Rules](#validation-rules)
+- [Working with Errors](#working-with-errors)
+- [Documentation](#documentation)
+- [Development](#development)
+- [License](#license)
+
+## Quick Start
+
+Requires Rust 1.94 or later. Add this dependency to `Cargo.toml`:
 
 ```toml
 [dependencies]
-valid8r = { version = "0.1", features = ["full"] }
+valid8r = { version = "0.2", features = ["email"] }
 ```
 
-The derive macro is included. Enable individual features instead of `full`
-when you only need some optional validators. Requires Rust 1.94 or later.
+The derive macro is included. The `email` feature adds domain validation;
+without it, the email rule checks the local part and lengths but does not
+check domain syntax.
 
 ```rust
 use valid8r::Validate;
@@ -24,94 +43,176 @@ struct SignUp {
     password: String,
 
     #[validate(must_match(other = "password"), sensitive)]
-    password_confirmation: String,
-
-    #[validate(phone_number(country = "US"))]
-    phone: Option<String>,
+    confirmation: String,
 }
+
+let mut signup = SignUp {
+    email: "person@example.com".into(),
+    password: "long-enough-password".into(),
+    confirmation: "long-enough-password".into(),
+};
+assert!(signup.validate().is_ok());
+
+signup.email = "invalid".into();
+signup.password = "short".into();
+let errors = signup.validate().unwrap_err();
+assert_eq!(errors.field_errors()["email"][0].code, "email");
+assert_eq!(errors.field_errors()["password"][0].code, "length");
+assert!(
+    !errors.field_errors()["password"][0]
+        .params
+        .contains_key("value")
+);
+assert!(
+    !errors.field_errors()["confirmation"][0]
+        .params
+        .contains_key("other")
+);
 ```
 
-Calling `.validate()` returns `Ok(())` or a structured `ValidationErrors` tree
-suitable for serializing into API error responses.
+Call `.validate()` after constructing or deserializing a struct. It returns
+`Ok(())` when the rules pass, or `Err(ValidationErrors)` when they fail.
+Validation checks the values without changing them; deriving `Deserialize`
+does not automatically run validation.
 
-## Attribution
+## Feature Flags
 
-This workspace is derived from the excellent
-[validator](https://github.com/Keats/validator) crate by Vincent Prouillet
-and its contributors (MIT licensed, Copyright © 2016 Vincent Prouillet). The
-core design; the `Validate` trait, the derive macro approach, the error
-model, and the built-in validators all comes from that project, and this fork
-would not exist without it. If you just need struct validation, use the
-original crate from crates.io; this fork exists to carry extensions its
-projects needed.
+No optional features are enabled by default. The derive macro and basic
+email, length, range, IP, presence, consent, nested, and custom validation
+are available without enabling a feature.
 
-## What this fork adds
+| Feature | What it enables |
+| --- | --- |
+| `email` | Email domain syntax checks and internationalized domain handling through `idna` |
+| `url` | Absolute HTTP/HTTPS URL validation |
+| `phone_number` | Phone validation through `phonenumber`, with an optional country hint |
+| `cards` | Credit-card validation through `card-validate` |
+| `indexmap` | `length` validation for `IndexMap` and `IndexSet` |
+| `full` | All optional features above |
 
-On top of upstream's validators (`email`, `url`, `length`, `range`, `ip`,
-`credit_card`, `regex`, `contains`, `does_not_contain`, `must_match`,
-`non_control_character`, `required`, `nested`, `custom`, `schema`):
+For all optional validators:
 
-- **`phone_number`** — phone validation via the `phonenumber` crate, with an
-  optional ISO 3166-1 country hint: `#[validate(phone_number(country = "US"))]`.
-- **Conditional presence** — `required_if`, `required_with`,
-  `required_with_all`, `required_without`, `required_without_all`.
-- **Prohibition** — `prohibited_if`, `prohibited_with`, `prohibited_with_all`,
-  `prohibited_without`, `prohibited_without_all`: the field must be absent
-  when the condition holds.
-- **Consent** — `accepted`, `declined`, `accepted_if`, `declined_if` for
-  terms-of-service and opt-in/opt-out fields (bools or strings like
-  `"yes"`/`"on"`/`"1"`).
-- **PATCH semantics** — `Option<Option<T>>` and
-  [`Delta<T>`](https://github.com/musajingo/delta) fields distinguish
-  _absent_ / _explicit null_ / _value_; validators run only on actual values,
-  and cross-field presence checks treat a cleared field as absent.
-- **`sensitive`** — `#[validate(sensitive)]` strips a field's submitted value
-  from every error it produces (including the `other` param of a `must_match`
-  on a different field), so credentials never reach a response body or log.
-- **`nullable`** on `email`/`url` — accept empty strings for clear-on-empty
-  form fields.
-- **`rust_decimal::Decimal`** support in `range`.
-- **Non-panicking error merging** — field, nested-struct and list errors for
-  the same key merge instead of panicking.
+```toml
+[dependencies]
+valid8r = { version = "0.2", features = ["full"] }
+```
 
-## Workspace layout
+You can instead select individual features, such as
+`features = ["email", "url", "phone_number"]`. Features belong to the
+`valid8r` runtime crate; `valid8r_derive` has no feature flags of its own.
 
-| Crate                    | Purpose                                                                                   |
-| ------------------------ | ----------------------------------------------------------------------------------------- |
-| `valid8r`                | Core traits (`Validate`, `ValidateArgs`), error types, built-in validator implementations    |
-| `valid8r_derive`         | The `#[derive(Validate)]` procedural macro                                                 |
-| `valid8r_derive_tests`   | Integration and compile-fail tests for the derive macro (not published)                    |
+## Validation Rules
 
-## Cargo features
+| Purpose | Rules and behavior |
+| --- | --- |
+| Strings and formats | `email`, `url`, `phone_number`, `credit_card`, `ip`, `regex`, `non_control_character` |
+| Bounds | `length` for Unicode scalar counts or collection sizes; `range` for numeric types, including `rust_decimal::Decimal` |
+| Presence | `required`, `required_if`, `required_with`, `required_with_all`, `required_without`, `required_without_all` |
+| Prohibition | `prohibited_if`, `prohibited_with`, `prohibited_with_all`, `prohibited_without`, `prohibited_without_all` |
+| Consent | `accepted`, `declined`, `accepted_if`, `declined_if` |
+| Comparisons and custom rules | `must_match`, repeatable `custom` functions, and struct-level `schema` functions |
+| Nested data | `nested` for child structs or collections of validating values; `nest_all_fields` for struct-wide nested validation |
 
-No features are enabled by default.
+Value rules check `Some(value)` and skip `None`. Presence and prohibition
+rules still run on absent values. `required` checks presence; add
+`length(min = 1)` when a present string must also be nonempty.
 
-| Feature        | Enables                                               |
-| -------------- | ----------------------------------------------------- |
-| `email`        | Domain/host-part email validation (via `idna`)        |
-| `phone_number` | `phone_number` validator (via `phonenumber`)          |
-| `cards`        | `credit_card` validator (via `card-validate`)         |
-| `url`          | `url` validator (via `url`)                           |
-| `indexmap`     | `length`/`contains` support for `IndexMap`/`IndexSet` |
-| `full`         | All of the above                                      |
+For PATCH payloads, `Option<Option<T>>` and
+[`Delta<T>`](https://github.com/musajingo/delta) distinguish omitted, cleared,
+and set fields. Only actual values count as present and reach value
+validators. Nested `Option`s need a custom Serde deserializer to preserve
+explicit JSON nulls. Delta comes from the Git repository linked above.
+See the [PATCH guide](valid8r/README.md#patch-semantics) for dependencies and
+working examples.
+
+`email(nullable)`, `url(nullable)`, and `phone_number(nullable)` accept empty
+strings. They do not convert those strings to `None` or database nulls.
+Other rules on the same field still apply.
+
+## Working with Errors
+
+An error has a machine-readable `code`, an optional `message`, and a
+`params` map. `.field_errors()` exposes direct field errors. `.errors()` and
+serialization preserve nested errors too. Struct-level schema errors use
+`__all__`.
+
+Add `serde_json = "1"` to your dependencies to serialize the error tree:
+
+```rust
+use valid8r::Validate;
+
+#[derive(Validate)]
+struct Contact {
+    #[validate(email(message = "Enter a valid email address"))]
+    email: String,
+}
+
+let contact = Contact {
+    email: "invalid".into(),
+};
+let errors = contact.validate().unwrap_err();
+let json = serde_json::to_value(&errors).unwrap();
+assert_eq!(
+    json,
+    serde_json::json!({
+        "email": [{
+            "code": "email",
+            "message": "Enter a valid email address",
+            "params": { "value": "invalid" }
+        }]
+    })
+);
+```
+
+`sensitive` removes a field's `value` parameter and suppresses its `other`
+parameter when referenced by `must_match`. It does not sanitize arbitrary
+custom messages or parameters, and a parent annotation does not redact
+nested children's errors. Mark sensitive child fields individually.
+
+Error merging handles field/nested collisions without panicking. When a
+field has both scalar and nested errors, the nested errors take precedence;
+the scalar errors are not preserved under that same key.
+
+## Documentation
+
+| Readme | Purpose |
+| --- | --- |
+| [valid8r](valid8r/README.md) | Runtime guide, error handling, PATCH examples, and the full validator reference |
+| [valid8r_derive](valid8r_derive/README.md) | Derive attributes, context passing, schema rules, and crate aliases |
+
+The workspace contains the runtime crate, the procedural macro crate, and
+`valid8r_derive_tests`, a private crate for integration tests, compile-fail
+tests, and executable README examples.
 
 ## Development
+
+Install the stable toolchain with `rustfmt` and `clippy`, and the Rust 1.94
+toolchain, then run:
 
 ```sh
 ./scripts/check.sh
 ```
 
-runs `cargo fmt --check`, clippy with warnings denied,
-the full test suite, documentation with warnings denied, a per-feature test
-sweep of the `valid8r` crate, and an MSRV (`1.94`) check.
-CI also builds both crates from their packaged archives.
+The script checks formatting, clippy with warnings denied, the workspace
+test suite, README examples (including those normally ignored by standalone
+crate doctests), documentation with warnings denied, the runtime's individual
+feature configurations, and a Rust 1.94 build check.
+
+To run just the examples from all three READMEs:
+
+```sh
+cargo +stable test -p valid8r_derive_tests --all-features --doc -- --include-ignored
+```
+
+CI also builds both public crates from their package archives.
 
 ## License
 
-Licensed under either of [MIT](LICENSE-MIT) or
+Licensed under either [MIT](LICENSE-MIT) or
 [Apache License, Version 2.0](LICENSE-APACHE), at your option.
 
-Portions of this codebase are copied from or derived from
+Portions of the code are derived from
 [Keats/validator](https://github.com/Keats/validator),
-Copyright © 2016 Vincent Prouillet, and are used under the terms of the MIT
-license. The original copyright notice is preserved in [LICENSE-MIT](LICENSE-MIT).
+Copyright © 2016 Vincent Prouillet and the validator crate contributors,
+and are used under the MIT license. The original notice is preserved in
+[LICENSE-MIT](LICENSE-MIT).
